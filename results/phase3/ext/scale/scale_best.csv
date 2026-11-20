@@ -1,0 +1,3 @@
+run,model,dropout,weight_decay,epochs_run,best_epoch,best_val_loss,val_acc_at_best,train_loss_at_best,seconds
+mean_L1_do0.2_wd1e-05,mean,0.2,1e-05,22,19,6.137882776558088,0.1645214200328042,6.065015278615924,1561.3
+concat_L1_do0.5_wd1e-05,concat,0.5,1e-05,14,11,6.003556859405619,0.18236913068861027,6.110725260974186,16993.9

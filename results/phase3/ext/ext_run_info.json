@@ -1,0 +1,95 @@
+{
+  "label": "extension beyond the Assignment 3 spec; preliminary validation results",
+  "conditions": 73,
+  "new_condition_files": 36,
+  "generator_check": {
+    "condition": "sub-p0.20-s47",
+    "records": 500,
+    "identical": true
+  },
+  "parity": {
+    "neural_required_74": {
+      "rows": 74,
+      "max_abs_dH": 8.578555110716479e-08,
+      "T_identical": true,
+      "tolerance": 0.0001,
+      "ok": true
+    },
+    "ngram_control_37": true,
+    "geometry_audit_37": true
+  },
+  "device": "mps",
+  "true_loss": "S / T_clean: summed loss of a condition divided by the CLEAN target count (35,971), the same denominator for every condition",
+  "T_clean": 35971,
+  "E_sha256": "ca6b51539e1d8c14f11e946a2e6f87a2f547aa0f8d17c15f1c92299d51cd8105",
+  "sweep": {
+    "mean_L1": {
+      "best_epoch": 2,
+      "train_seconds": 60.7,
+      "checkpoint": "derived/phase3/ext/mean_L1_best.pt",
+      "checkpoint_sha256": "119d3116b766af2d0c3ae8f4338abd32101fce5351753706d61c0a36d4327867",
+      "untrained_val_loss": 10.297462448107815,
+      "trainable": 1968341,
+      "frozen": 23440896
+    },
+    "concat_L1": {
+      "best_epoch": 2,
+      "train_seconds": 76.9,
+      "checkpoint": "derived/phase3/ext/concat_L1_best.pt",
+      "checkpoint_sha256": "1ec7eb237c0d01cc967c253a82ef4acfbc57e6fc3406665f8089b7862ab53ab4",
+      "untrained_val_loss": 10.288585860650144,
+      "trainable": 2017493,
+      "frozen": 23440896
+    },
+    "mean_L2": {
+      "best_epoch": 2,
+      "train_seconds": 64.1,
+      "checkpoint": "derived/phase3/ext/mean_L2_best.pt",
+      "checkpoint_sha256": "5f85cf1ba9f639562b413df6aca32c4778cdcf1a1da15e9e815788c2a7fe275b",
+      "untrained_val_loss": 10.293722783649923,
+      "trainable": 1972501,
+      "frozen": 23440896
+    },
+    "concat_L2": {
+      "best_epoch": 2,
+      "train_seconds": 67.8,
+      "checkpoint": "derived/phase3/ext/concat_L2_best.pt",
+      "checkpoint_sha256": "7f38353cd8b1ea0e8b493557e22f003904873c0c74f9760dc004a4f3b4f1d997",
+      "untrained_val_loss": 10.301520805648401,
+      "trainable": 2021653,
+      "frozen": 23440896
+    },
+    "mean_L3": {
+      "best_epoch": 2,
+      "train_seconds": 66.8,
+      "checkpoint": "derived/phase3/ext/mean_L3_best.pt",
+      "checkpoint_sha256": "0177b85208f279b7b4c277aaf9348f58891ee1b761fbba0e55852b17fc145a68",
+      "untrained_val_loss": 10.303473408011227,
+      "trainable": 1976661,
+      "frozen": 23440896
+    },
+    "concat_L3": {
+      "best_epoch": 2,
+      "train_seconds": 66.9,
+      "checkpoint": "derived/phase3/ext/concat_L3_best.pt",
+      "checkpoint_sha256": "f5d1584e4a4029a645ad61bb974a9d490dbf8e5b639aadeff6efa093e3522195",
+      "untrained_val_loss": 10.296979046156904,
+      "trainable": 2025813,
+      "frozen": 23440896
+    }
+  },
+  "sweep_settings": {
+    "n_layers": [
+      1,
+      2,
+      3
+    ],
+    "hidden_size": 64,
+    "max_epochs": 30,
+    "device": "mps"
+  },
+  "python": "3.13.11",
+  "torch": "2.15.0",
+  "seconds": 912.7,
+  "note": "GPU (mps): scoring matches cpu within 1e-7 nats; training repeats exactly run to run on this machine but follows a slightly different numerical path from cpu (1-layer validation loss within 0.008 nats of the cpu run over 5 epochs, same best epoch)"
+}
