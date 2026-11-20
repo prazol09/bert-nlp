@@ -666,6 +666,429 @@ md(r"""
 Still ahead in the assignment: interpret counterexamples where vector drift and prediction change disagree, cross-verify each other's code, and extend the paper.
 """)
 
+# =====================================================================================================
+# Phase 3 extensions (team decisions beyond the Assignment 3 spec)
+# =====================================================================================================
+md(r"""
+# Extensions — beyond the Assignment 3 spec
+
+Everything above is the required Assignment 3 work and is **not changed**. The sections below are team decisions that go further.
+They read the required results and the extension run fails if it cannot reproduce them. Every table and figure here is labelled as an extension.
+
+| Part | Question | Decision | Section |
+|---|---|---|---|
+| E1 | What happens past p = 0.20? | rates 0.01, 0.05, 0.10, 0.20 (saved files) + **0.30, 0.50, 0.70, 0.90** (new) | 19 |
+| E2 | What is the *true* cost of noise? | **H_true = S / T_clean**: summed loss over the *clean* target count, the same denominator for every condition | 20 |
+| E2 | Which operation hurts most? | ranked on every metric, at equal p and at equal edit distance | 21 |
+| E3 | Do more hidden layers or more epochs help? | **1, 2, 3 hidden layers of width 64** (never wider), 30 epochs, everything else as Assignment 3 | 22 |
+| E4 | One sentence, end to end | "A cow jumps over the fence", or any sentence you type | 23 |
+| R1 | Can regularisation stop the overfitting? | dropout {0, 0.2, 0.5} × weight decay {0, 1e-5, 1e-4, 1e-3} on the same 500 records | 24 |
+| R2 | Does more data help? | a 10K-record training chunk (36× the slice), networks and the n-gram both re-trained on it | 25 |
+| — | Which network next? | recommendation | 26 |
+
+Run: `python phase3_extensions.py` (about 15 minutes, most of it the sweep), which writes `results/phase3/ext/`. Settings: `extensions:` in `configs/phase3.yaml`.
+Plan: `docs/assignment/Phase-3/PHASE3_PLAN.md` section 5.
+""")
+
+md(r"""
+## 18. E0 — Load the extension results and check them against the required results
+""")
+code(r"""
+from src.ext import figures as xfig
+from src.ext.scoring import summarise as xsummarise
+X = p3["extensions"]; RX = RESULTS_P3_DIR / "ext"
+xinfo = json.load(open(RX / "ext_run_info.json"))
+xrows = pd.read_csv(RX / "condition_rows.csv"); xsum = pd.read_csv(RX / "noise_summary.csv")
+xgeo = pd.read_csv(RX / "geometry_summary.csv"); xaudit = pd.read_csv(RX / "geometry_audit.csv")
+xnoise = pd.read_csv(RX / "noise_realized.csv"); xrank = pd.read_csv(RX / "operation_ranking.csv")
+print("label   :", xinfo["label"])
+print("device  :", xinfo["device"], "|", xinfo["note"])
+print("conditions:", xinfo["conditions"], f"(1 clean + 3 operations x {len(X['noise']['rates'])} rates x 3 seeds)")
+print("noise generator reproduces a saved Assignment 2 file exactly:", xinfo["generator_check"]["identical"])
+for k, v in xinfo["parity"].items():
+    print(f"reproduces required {k:22}:", v if isinstance(v, bool) else v["ok"], "" if isinstance(v, bool) else f"(max |dH| {v['max_abs_dH']:.1e}, tolerance {v['tolerance']:g})")
+""")
+md(r"""
+**GPU or CPU?** This laptop's GPU (Apple M4, PyTorch `mps`) trains one epoch in about 1.1 s against 3.4 s on one CPU thread, and scores about 4–5× faster.
+Scoring on the GPU matches the CPU within 1e-7 nats (the 74 required rows above). GPU *training* repeats exactly from run to run on this machine,
+but it follows a slightly different numerical path from the CPU: over 5 epochs the 1-layer models' validation loss stays within 0.008 nats of the CPU run and the same epoch is kept (section 22).
+So the **required** results stay on the CPU, and the extensions use the GPU (`extensions.sweep.device`; it falls back to the CPU if no GPU is present).
+""")
+
+md(r"""
+## 19. E1 — Heavier noise: rates up to 0.90
+
+The new rates use the same function, noise rule, seeds and per-record random key as Assignment 2. Before writing anything, the run regenerates one saved
+Assignment 2 file in memory and requires it to match exactly. *p* is the chance that each eligible letter is edited, so p = 0.90 edits nine letters in ten.
+The table shows what the noise actually did (realized rate, edit distance per clean character, records emptied by deletion).
+""")
+code(r"""
+nz = xnoise[xnoise.operation != "clean"]
+tbl = nz.groupby(["operation", "p"], sort=False).agg(realized_rate=("realized_rate", "mean"), edit_distance_per_char=("normalized_med", "mean"),
+                                                     empty_records=("empty_records", "max"))
+pieces = xrows[xrows.model == "concat"].groupby(["operation", "p"], sort=False).agg(targets_T=("T", "mean"), pieces_per_record=("pieces_per_record", "mean"),
+                                                                                   unk_share=("unk_share", "mean"))
+tbl.join(pieces).round(3)
+""")
+
+md(r"""
+## 20. E2 — The true loss
+
+`H = S / T` divides the summed loss by the number of **noisy** targets. Noise splits words into more pieces, so T grows and the extra cost gets spread over the extra pieces.
+The true loss divides the same summed loss by the **clean** target count, which is 35,971 for every condition:
+
+$$H_{true} = \frac{S}{T_{clean}} \qquad \text{(for the clean condition } H_{true} = H\text{)}$$
+
+It answers: *how many nats does the model spend on this text in total, compared with the same text clean?* Accuracy stays per noisy target.
+""")
+code(r"""
+view = xsum[xsum.p.isin([0.0, 0.2, 0.5, 0.9])].copy()
+view = view.pivot_table(index=["operation", "p"], columns="model", values=["H_mean", "H_true_mean"], sort=False)
+view.columns = [f"{m} {'H' if v == 'H_mean' else 'true'}" for v, m in view.columns]
+view[[c for m in ("mean", "concat", "ngram") for c in (f"{m} H", f"{m} true")]].round(2)
+""")
+code(r"""
+fig = xfig.plot_noise_ext(xsum)
+""")
+md(r"""
+**Reading this (extension, preliminary validation results).**
+
+- **H understates the damage, and the gap widens with p.** At p = 0.20 insertion, the concatenation model's H rises from 7.28 to 9.17 nats (+1.9), but its true loss rises to 17.9 (+10.6).
+  At p = 0.90 insertion, H is 10.22, close to ln K = 10.29 (uniform guessing), and barely moving. Per target the model is already near chance, so H flattens.
+  The true loss keeps climbing (39.7 nats per clean target) because the text keeps getting longer: 140k targets against 36k clean.
+- **Insertion and substitution never level off in true loss; deletion turns around.** Deletion's true loss peaks near p = 0.30 (≈ 11.2) and then *falls*, below clean by p = 0.70 and to 3.5 at p = 0.90.
+  Accuracy under deletion also climbs back (13.2% at p = 0.90 against 13.8% clean). The next cell shows why: deletion removes the text itself.
+- **The n-gram control has the lowest true loss under heavy noise** for insertion and substitution, as it had for H at p ≥ 0.10 in section 15.
+""")
+code(r"""
+# why does heavy deletion look 'cheap'? fewer targets, and a growing share of them have no letters (punctuation, digits, end of record)
+comp = []
+for cid in ["clean", "del-p0.30-s11", "del-p0.70-s11", "del-p0.90-s11", "ins-p0.90-s11", "sub-p0.90-s11"]:
+    from src.ext.conditions import load_ext_condition
+    toks_ = pipe.tokenize_batch([r["noisy_text"] for r in load_ext_condition(cid, p2, p3)])
+    T_ = sum(len(t) + 1 for t in toks_); letters = sum(1 for t in toks_ for x in t if any(c.isalpha() for c in x))
+    comp.append({"condition": cid, "targets T": T_, "T / T_clean": T_ / 35971, "share of targets with no letter (incl. EOS)": (T_ - letters) / T_})
+pd.DataFrame(comp).round(3)
+""")
+md(r"""
+At 90% deletion only half as many targets are left, and 40% of them are punctuation, digits or end-of-record, against 20% in clean text.
+Those are tokens the noise rule cannot touch and the models predict well. **A lower loss here means there is less text left to predict, not that the model is robust.**
+Loss cannot tell "the text was preserved" from "the text was removed". This is a counterexample to reading low loss as robustness, in the spirit of Assignment 3 §17.
+""")
+
+md(r"""
+## 21. E2 — Which operation hurts most?
+
+For each model and rate the three operations are ordered from most to least harmful (`ins > sub > del` means insertion did the most damage).
+Prediction metrics: true loss, loss per noisy target, accuracy. Geometry: mean cosine (lower = more drift) and mean distance.
+""")
+code(r"""
+rk = xrank.copy()
+rk["metric"] = rk.model + " | " + rk.metric.str.replace("_mean", "")
+rk.pivot(index="p", columns="metric", values="order (most > least)")[[
+    "concat | H_true", "mean | H_true", "ngram | H_true", "concat | H", "concat | accuracy", "geometry | mean_cosine", "geometry | mean_distance"]]
+""")
+md(r"""
+Equal *p* is not equal damage. Each operation causes a slightly different edit distance per character, so the next figure puts every point at the edit distance it
+actually caused (x axis). An operation whose curve is higher at the same x does more harm per character edited.
+""")
+code(r"""
+fig = xfig.plot_operation_vs_med(xsum, xgeo, xnoise)
+""")
+code(r"""
+fig = xfig.plot_geometry_ext(xgeo)
+xgeo[xgeo.rate >= 0.3][["operation", "rate", "valid_min", "undefined_max", "mean_cosine_mean", "mean_distance_mean", "mean_cosine_changed_mean"]].round(3)
+""")
+md(r"""
+**Which operation hurts most? It depends on what you measure (extension, preliminary validation results).**
+
+- **For prediction: insertion > substitution > deletion**, in true loss for all three models at every rate from 0.01 to 0.90, and in H and accuracy for the concatenation model.
+  Insertion adds letters, so it creates the most new word pieces to predict.
+- **For static vector drift the order flips: deletion moves vectors the most and insertion the least** (lowest mean cosine and largest distance from p = 0.10 up).
+  An inserted letter leaves the original letters in place, so the pieces stay closer to the clean word's pieces; deletion removes them.
+- **So the operation with the smallest vector drift (insertion) is the one that hurts prediction most, and the one with the largest drift (deletion) hurts it least.**
+  This is the clearest counterexample in the study to a simple "small drift means robust prediction" story (Assignment 3 §16). Part of deletion's advantage is the shrinking-text effect above, so it is not evidence that deletion is harmless.
+- **At equal actual damage (the edit-distance figure)** the three operations caused almost the same edit distance per character at each p, so the ranking does not come from one operation simply editing more.
+- **Coverage matters at high deletion rates.** At p = 0.90 deletion, 615 of the 1,000 spans are fully deleted and undefined; its geometry means cover only the 385 spans that survive.
+- Cosine among *changed* spans drifts down slowly with p for every operation (insertion 0.53 → 0.41), so heavier noise does move each hit span further, not only more spans.
+""")
+
+md(r"""
+## 22. E3 — More hidden layers, more epochs
+
+Same data, optimizer, learning rate, batch size, seed and selection rule as Assignment 3. Only the number of hidden layers (1, 2, 3, all 64 wide) and the epoch limit (30) change.
+The epoch kept is still the one with the lowest **clean validation** loss, and that model is then scored on all 73 conditions.
+""")
+code(r"""
+xh = pd.read_csv(RX / "sweep_history.csv"); xss = pd.read_csv(RX / "sweep_noise_summary.csv")
+best = []
+for (m, n), g in xh.groupby(["model", "n_layers"]):
+    s = g[g.selected].iloc[0]; last = g.iloc[-1]; inf = xinfo["sweep"][f"{m}_L{n}"]
+    best.append({"model": m, "hidden layers": n, "trainable params": inf["trainable"], "best epoch": int(s.epoch),
+                 "best val loss": s.val_loss, "val acc @best": s.val_accuracy, "val loss @30": last.val_loss,
+                 "train loss @30": last.train_loss, "val acc @30": last.val_accuracy, "train s": inf["train_seconds"]})
+pd.DataFrame(best).round(4)
+""")
+code(r"""
+fig = xfig.plot_sweep_training(xh)
+""")
+code(r"""
+# where does it flatten? training loss: relative drop per epoch (levelling off = under 1% per epoch); validation: rise since the best epoch
+lvl = []
+for (m, n), g in xh.groupby(["model", "n_layers"]):
+    g = g.set_index("epoch"); rel = -g.train_loss.diff() / g.train_loss.shift()
+    flat = rel[rel < 0.01].index.min()
+    lvl.append({"model": m, "hidden layers": n, "train drop epoch 2->3": rel[3], "train drop epoch 29->30": rel[30],
+                "train levels off (<1%/epoch)": "not within 30 epochs" if pd.isna(flat) else f"epoch {flat}",
+                "val loss rise, best -> epoch 30 (nats)": g.val_loss[30] - g.val_loss.min()})
+pd.DataFrame(lvl).round(3)
+""")
+md(r"""
+**Reading this (extension, preliminary validation results).**
+
+- **Every variant is best at epoch 2: 1, 2 or 3 hidden layers, mean or concatenation.** More epochs only make clean validation loss worse.
+  For the 1-layer concatenation model, validation loss goes 7.28 (epoch 2) → 7.47 (5) → 8.10 (10) → 11.30 (30), while training loss falls 6.48 → 2.95. That is memorisation of the 500 training records.
+- **Training loss never levels off within 30 epochs.** It still drops 1.3–2.0% per epoch at epoch 30 and is slowing, so it would level off only some way past 30 epochs, as the training set becomes memorised. Validation loss flattens at epoch 2, at its minimum, and then climbs.
+- **Depth does not help.** The best clean validation loss stays within 0.04 nats of the 1-layer model (concatenation: 7.283 / 7.325 / 7.308 for 1 / 2 / 3 layers; mean: 7.505 / 7.480 / 7.518).
+  The extra 64×64 layers add only about 4k parameters each; almost all ~2M parameters sit in the 64 → 29,525 output layer, and the bottleneck is 500 training records, not depth.
+- **Deeper networks overfit faster** (validation loss at epoch 30: 11.3 vs 14.1 vs 15.1 for concatenation) and end with lower validation accuracy.
+- **Depth does not change robustness to noise.** The true-loss increase is nearly identical for 1, 2 and 3 layers at every rate (differences ≤ 0.7 nats against increases of up to 33 nats, with no consistent direction).
+- **Validation accuracy peaks much later (epochs 11–28) than loss.** Accuracy only counts the top guess, while loss also punishes confident wrong guesses, so the two can disagree. The assignment selects by loss.
+- **What would help instead:** more training data (`train_full` exists from Phase 2), or regularisation (dropout or weight decay, which the assignment fixes at 0). We have not run either.
+""")
+code(r"""
+# GPU vs CPU: the 1-layer sweep model's first 5 epochs next to the required CPU run (same settings otherwise)
+cmp1 = xh[xh.n_layers == 1].merge(hist, on=["model", "epoch"], suffixes=("_gpu_sweep", "_cpu_required"))
+cmp1["|diff|"] = (cmp1.val_loss_gpu_sweep - cmp1.val_loss_cpu_required).abs()
+cmp1[["model", "epoch", "val_loss_gpu_sweep", "val_loss_cpu_required", "|diff|"]].round(6)
+""")
+code(r"""
+# does depth change robustness? true-loss increase over each variant's own clean loss, mean over seeds
+rob = xss[xss.operation != "clean"].pivot_table(index=["operation", "p"], columns=["model", "n_layers"], values="dH_true_mean", sort=False)
+rob.round(2)
+""")
+code(r"""
+fig = xfig.plot_sweep_noise(xss)
+""")
+
+md(r"""
+## 23. E4 — Follow one sentence through the whole pipeline
+
+**Change the inputs in the next cell and re-run it**, or use the form in the cell after it (type, then press *Run*). From a terminal:
+`python phase3_extensions.py trace "A cow jumps over the fence" --word cow --custom "A cwo jumps ovr the fence"`.
+
+- `SENTENCE`: any text. It goes through the same noise rule, tokenizer, frozen table **E**, the two required networks and the n-gram control.
+- `FOCUS_WORD`: gets one edit of each kind on the same letter (cow → coow / cw / cpw), so the three operations are compared on exactly the same position. `None` skips this.
+- `RATES`, `SEED`: random noise at each rate (the real noise function; same seed → same noisy text).
+- `CUSTOM`: your own noisy versions, `{"name": "text"}`.
+- `DETAIL`: which variants get the full per-token table (context → target, loss, top-3 guesses).
+
+This is an **illustration, not evidence**. The networks learned from 500 WikiText records, so their guesses on a sentence like this are mostly frequent tokens.
+""")
+code(r"""
+from src.ext.trace import load_context, trace, show, widget
+tctx = load_context()                     # loads the tokenizer, E, both required networks and the n-gram once
+
+SENTENCE   = X["trace"]["sentence"]       # "A cow jumps over the fence"
+FOCUS_WORD = "cow"
+RATES      = X["trace"]["rates"]          # [0.1, 0.3, 0.5, 0.9]
+SEED       = X["trace"]["seed"]
+CUSTOM     = {"my typo": "A cwo jumps ovr the fence"}
+DETAIL     = ["clean", "controlled insertion on 'cow'", "substitution p=0.5"]
+
+tr_ = trace(SENTENCE, tctx, RATES, SEED, FOCUS_WORD, CUSTOM)
+show(tr_, [d for d in DETAIL if d in tr_["tokens"]])
+""")
+code(r"""
+widget(tctx, SENTENCE)                    # interactive form (needs a live kernel; the static output above always works)
+""")
+
+md(r"""
+## 24. R1 — Can regularisation stop the overfitting?
+
+Sections 13 and 22 show the networks memorising the 500 training records after epoch 2. Two standard fixes, tried on the **same** data so the effect is regularisation alone:
+
+- **Dropout** {0, 0.2, 0.5}: during training, randomly switch off that share of hidden units after every hidden ReLU, so the network cannot rely on any single unit.
+- **Weight decay** {0, 1e-5, 1e-4, 1e-3}: Adam's own L2 penalty, which pulls weights toward zero, so the optimizer is unchanged.
+
+Every combination, for both models, at 1 hidden layer (depth made no difference in section 22), 30 epochs, everything else as Assignment 3. The setting with the lowest clean validation loss
+wins per model; it is then re-run at 2 and 3 layers and scored on all 73 noise conditions. Picking on the validation records and reporting on them is optimistic; the test split stays sealed.
+Run: `python phase3_extensions.py regularise` (about 35 minutes on the GPU).
+""")
+code(r"""
+RG = RX / "reg"
+rgrid = pd.read_csv(RG / "reg_grid.csv"); rbest = pd.read_csv(RG / "reg_best.csv"); rhist = pd.read_csv(RG / "reg_history.csv")
+rsum = pd.read_csv(RG / "reg_noise_summary.csv")
+show_cols = ["model", "n_layers", "dropout", "weight_decay", "best_epoch", "best_val_loss", "val_acc_at_best", "val_loss_at_30", "val_rise_after_best"]
+print("winners (lowest clean validation loss, 1 hidden layer):")
+print(rbest[["model", "dropout", "weight_decay", "best_epoch", "best_val_loss", "val_acc_at_best"]].round(4).to_string(index=False))
+rgrid[rgrid.n_layers == 1][show_cols].sort_values(["model", "best_val_loss"]).round(4).reset_index(drop=True)
+""")
+code(r"""
+fig = xfig.plot_reg_grid(rgrid)
+""")
+code(r"""
+fig = xfig.plot_reg_curves(rhist, rbest)
+""")
+code(r"""
+# the winners at 2 and 3 hidden layers
+rgrid.merge(rbest[["model", "dropout", "weight_decay"]], on=["model", "dropout", "weight_decay"])[show_cols].sort_values(["model", "n_layers"]).round(4)
+""")
+code(r"""
+# robustness: does the regularised model's loss rise less under noise? (true loss, 1 layer, mean over 3 seeds)
+k = rsum[(rsum.n_layers == 1) & (rsum.operation != "clean") & rsum.p.isin([0.05, 0.2, 0.5, 0.9])].copy()
+k["setting"] = np.where((k.dropout == 0) & (k.weight_decay == 0), "none", "best")
+tab = k.pivot_table(index=["operation", "p"], columns=["model", "setting"], values=["H_true_mean", "dH_true_mean"], sort=False)
+tab.round(2)
+""")
+code(r"""
+fig = xfig.plot_reg_noise(rsum, rbest)
+""")
+code(r"""
+# the winners peaked at epoch 29-30 of 30: re-trained for up to 100 epochs, stopping 5 epochs after the last improvement
+pd.read_csv(RG / "reg_long.csv")[["model", "dropout", "weight_decay", "epochs_run", "best_epoch", "best_val_loss", "best_val_loss_30_epoch_grid", "val_acc_at_best"]].round(4)
+""")
+code(r"""
+# against the n-gram control: true loss per clean target, mean over seeds; which noise cells does each network win?
+ng = xsum[xsum.model == "ngram"].set_index(["operation", "p"]).H_true_mean.rename("ngram")
+cmpR = pd.DataFrame({r: rsum[rsum.run == r].set_index(["operation", "p"]).H_true_mean
+                     for r in ["concat_L1_do0_wd0", "concat_L1_do0.5_wd0.0001", "mean_L1_do0_wd0", "mean_L1_do0.2_wd0.0001"]}).join(ng)
+noisy_ = cmpR[cmpR.index.get_level_values(0) != "clean"]
+print("noise cells (of 24) where the network's true loss is below the n-gram's:",
+      {c: int((noisy_[c] < noisy_.ngram).sum()) for c in cmpR.columns if c != "ngram"})
+cmpR.round(2)
+""")
+md(r"""
+**Reading this (extension, preliminary validation results).**
+
+- **Regularisation stops the overfitting.** Without it, validation loss is lowest at epoch 2 and then climbs (by 4.0 nats for concatenation by epoch 30).
+  With the winning settings, validation loss keeps improving until about epoch 30 and then stays flat (it rises by at most 0.02 afterwards).
+  Re-training the winners for up to 100 epochs confirms the plateau: concatenation's best is 6.7753 at epoch 33, against 6.7757 at epoch 30.
+- **It also makes the models clearly better on clean text.** Concatenation 7.28 → **6.78** nats (accuracy 13.8% → 16.2%); mean pooling 7.50 → **7.02** (9.8% → 14.3%).
+  Both are now well below the n-gram control (7.55).
+- **Weight decay does the work; dropout alone barely helps.** With no weight decay, dropout still peaks at epoch 2–3 (concatenation 7.23 at dropout 0.5).
+  Weight decay 1e-5 still overfits early (best epochs 4–20); 1e-4 or 1e-3 removes the rise. The best cell for both models combines weight decay 1e-4 with dropout,
+  which adds a little on top (concatenation 6.95 at dropout 0 → 6.78 at dropout 0.5).
+- **Depth still does not help, even regularised.** The concatenation winner at 2 and 3 layers reaches 6.90 and 6.99, worse than 1 layer (6.78); mean pooling 7.18 and 7.21 against 7.02.
+- **Regularisation lowers the loss almost everywhere but barely changes the noise penalty.** For insertion and substitution, the increase in true loss over each model's own clean
+  loss stays within about 0.1 nats of the unregularised model up to p = 0.20, and is slightly smaller at heavy noise (concatenation, insertion p = 0.90: +31.4 against +32.5).
+  For deletion it is a little larger (+0.3 nats at p = 0.20), and at p ≥ 0.50 the true loss is equal or slightly higher; deletion's true loss is the shrinking-text measure of section 20.
+  The whole curve moves down; it does not get flatter. A better-fitted model is not automatically a more noise-robust one.
+- **Against the n-gram control**, the regularised concatenation model has the lower true loss in 19 of the 24 noise cells (10 before regularisation):
+  every substitution and deletion cell, and insertion up to p = 0.10. The n-gram still wins under insertion from p = 0.20.
+- **Caveat.** The setting was chosen on the same validation records it is reported on, so these numbers are optimistic. The test split stays sealed for the final evaluation.
+""")
+
+md(r"""
+## 25. R2 — More data: a 10K-record training chunk
+
+Regularisation stopped the memorising, but it cannot teach the model words it never saw: 17% of the validation targets never appear in the 500 training records.
+Rather than jump to the whole training split, we take a **chunk**: the first 10,000 `train_full` records in file order, extended to the end of the article in progress.
+It contains all 500 slice records, so it is a strict superset of what the models saw before. The validation records and the 73 noise conditions are unchanged.
+
+- **Networks**, per model: no regularisation, the R1 winner, and the R1 winner's dropout with weaker weight decay (1e-5). 1 hidden layer of 64, up to 30 epochs, stop 3 epochs after the last improvement.
+- **The n-gram control is rebuilt on the same chunk** and its interpolation weights re-selected on clean validation with the Assignment 2 procedure, so the comparison stays matched (same data for both).
+
+Run: `python phase3_extensions.py scale` (about 2.5 hours on the GPU, mostly the regularised runs).
+""")
+code(r"""
+SC = RX / "scale"
+sinfo = json.load(open(SC / "scale_run_info.json")); sruns = pd.read_csv(SC / "scale_runs.csv"); sbest = pd.read_csv(SC / "scale_best.csv")
+ssum = pd.read_csv(SC / "scale_noise_summary.csv"); shist = pd.read_csv(SC / "scale_history.csv")
+c = sinfo["chunk"]
+print(f"chunk: {c['records']:,} records ({c['articles']} articles), {c['train_targets']:,} training targets ({c['train_targets'] / 35642:.1f}x the slice); "
+      f"contains {c['contains_slice_records']} of the 500 slice records; distinct outputs seen in training: {c['distinct_outputs_seen']:,} of {vocab.size:,}")
+print("n-gram interpolation weights re-selected on the chunk:", sinfo["ngram_lambdas"], "(on the 500-record slice: [1, 0, 0], a unigram)")
+sruns[["model", "dropout", "weight_decay", "epochs_run", "best_epoch", "best_val_loss", "val_acc_at_best", "train_loss_at_best", "seconds"]].round(4)
+""")
+code(r"""
+# clean validation, 500-record slice vs 10K chunk, each model's best setting and the n-gram on the same data
+ng500 = control[control.condition_id == "clean"].H.iloc[0]
+ng10k = ssum[(ssum.run == "ngram") & (ssum.operation == "clean")].H_mean.iloc[0]
+rows_ = []
+for m in ("mean", "concat"):
+    b500 = rbest[rbest.model == m].iloc[0]; b10 = sbest[sbest.model == m].iloc[0]
+    n500 = rgrid[(rgrid.model == m) & (rgrid.n_layers == 1) & (rgrid.dropout == 0) & (rgrid.weight_decay == 0)].iloc[0]
+    n10 = sruns[(sruns.model == m) & (sruns.dropout == 0) & (sruns.weight_decay == 0)].iloc[0]
+    rows_.append({"model": m, "500: none": n500.best_val_loss, "500: best": b500.best_val_loss, "10K: none": n10.best_val_loss,
+                  "10K: best": b10.best_val_loss, "10K best setting": f"dropout {b10.dropout:g}, wd {b10.weight_decay:g}",
+                  "accuracy 500 best -> 10K best": f"{b500.val_acc_at_best:.1%} -> {b10.val_acc_at_best:.1%}"})
+rows_.append({"model": "ngram", "500: none": ng500, "500: best": ng500, "10K: none": ng10k, "10K: best": ng10k, "10K best setting": str(sinfo["ngram_lambdas"])})
+pd.DataFrame(rows_).round(3)
+""")
+code(r"""
+# figures written by the run (learning curves; true loss under noise vs the n-gram trained on the same chunk)
+from IPython.display import Image, display
+display(Image(filename=str(SC / "figures" / "scale_training.png"))); display(Image(filename=str(SC / "figures" / "scale_noise.png")))
+""")
+code(r"""
+# under noise: true loss of the best networks vs the n-gram trained on the SAME chunk; which noise cells does each win?
+k10 = {r: ssum[ssum.run == r].set_index(["operation", "p"]).H_true_mean for r in list(sbest.run) + ["ngram"]}
+t10 = pd.DataFrame(k10); t10.columns = [c.split("_")[0] if c != "ngram" else "ngram" for c in t10.columns]
+nz10 = t10[t10.index.get_level_values(0) != "clean"]
+print("noise cells (of 24) where the network's true loss is below the n-gram's:", {m: int((nz10[m] < nz10.ngram).sum()) for m in ("mean", "concat")})
+inc = ssum[ssum.operation != "clean"].pivot_table(index=["operation", "p"], columns="run", values="dH_true_mean", sort=False)
+print("\ntrue-loss increase over own clean loss (nats):"); display(inc[list(sbest.run) + ["ngram"]].round(2))
+t10.round(2)
+""")
+md(r"""
+**Reading this (extension, preliminary validation results).**
+
+- **More data is the bigger lever.** On the 10K chunk the best networks reach a clean validation loss of **6.00** (concatenation) and **6.14** (mean pooling),
+  against 6.78 and 7.02 for the best regularised models on 500 records, and 7.28 and 7.50 for the required Assignment 3 models. Accuracy: 18.2% and 16.5%.
+  Only 0.6% of validation targets are now unseen in training (17.0% on the slice).
+- **The right amount of regularisation shrinks with more data.** The 500-record winners (weight decay 1e-4) are now *worse* than no regularisation
+  (concatenation 6.25 against 6.18; mean 6.47 against 6.40): they hold back a model that has enough data. Weight decay 1e-5 with the same dropout is best for both.
+  Without regularisation the networks still peak at epoch 2, but each epoch is now 36× more training steps.
+- **The n-gram control gets stronger too.** Rebuilt on the same chunk, its interpolation weights become (0.75, 0.25, 0): it now uses the previous token, where on 500 records it was a unigram.
+  Its clean loss drops from 7.55 to 7.07. The networks still beat it on clean text by about a nat.
+- **Under noise the networks now win almost everywhere.** Both best networks have a lower true loss than the matched n-gram in **22 of 24** noise cells, including heavy insertion,
+  which the n-gram won in every earlier setting. The exceptions are deletion at p = 0.70 and 0.90, the shrinking-text cases of section 20, where all three models sit within 0.11 nats.
+- **Unlike regularisation, more data makes the noise penalty smaller.** The increase in true loss over each model's own clean loss falls for concatenation from +31.4 (500 records,
+  regularised) to **+28.0** nats at 90% insertion, and from +16.9 to +14.7 at 90% substitution, now below the n-gram's own increase (+29.9 and +15.9).
+  At light insertion and substitution (p ≤ 0.20) the increases are about the same for all three models; under deletion the networks' increase is about 0.5 nats larger than the n-gram's at p = 0.20.
+- Training loss (dashed) sits *above* validation loss for the regularised runs because dropout is switched on while training loss is measured.
+- **Caveats.** Settings were chosen on the validation records they are reported on (optimistic). Each run was trained once. The `seconds` column is wall-clock time and includes
+  periods when the laptop was asleep, so it is not a speed measurement (the last concatenation run especially).
+""")
+
+md(r"""
+### 25b. Depth on the 10K chunk (R2b)
+
+On 500 records extra hidden layers only overfit faster (sections 22 and 24). With 36× more data there may be enough to use them. Each model's best 10K setting
+(dropout as in R1, weight decay 1e-5) is re-trained at 2 and 3 hidden layers of width 64; the 1-layer result is the R2 run itself (same settings and seed), reused rather than re-trained.
+Run: `python phase3_extensions.py scale --depth-only`.
+""")
+code(r"""
+dr = pd.read_csv(SC / "scale_depth_runs.csv"); dsum = pd.read_csv(SC / "scale_depth_noise_summary.csv")
+print(dr[["model", "n_layers", "dropout", "weight_decay", "trainable", "epochs_run", "best_epoch", "best_val_loss", "val_acc_at_best"]].round(4).to_string(index=False))
+k = dsum[(dsum.operation != "clean") & dsum.p.isin([0.2, 0.5, 0.9])]
+k.pivot_table(index=["operation", "p"], columns=["model", "n_layers"], values="dH_true_mean", sort=False).round(2)
+""")
+md(r"""
+**Reading this (extension, preliminary validation results).**
+
+- **More data does not make depth pay off for concatenation.** Its best clean validation loss gets worse with each layer: **6.004 / 6.154 / 6.259** for 1 / 2 / 3 layers (accuracy 18.2% / 17.2% / 15.8%).
+- **Mean pooling gains a little from a second layer**: **6.138 / 6.119 / 6.176**. This is the first time an extra layer has helped in any experiment (on 500 records every extra layer was worse), but 0.02 nats is small and the third layer loses it again.
+- **Under heavy noise the 2-layer concatenation model is slightly better** despite its worse clean loss: true loss at 90% insertion 33.56 against 33.99 for 1 layer, 90% substitution 20.62 against 20.67. Its increase over its own clean loss is smaller at every insertion and substitution rate (27.41 against 27.99 at 90% insertion), partly because it starts from a higher clean loss. All differences are under 0.5 nats.
+- Against the n-gram trained on the same chunk, the 2- and 3-layer concatenation models win 23 of 24 noise cells (1 layer: 22); mean pooling wins 22 at every depth.
+- **Caveats.** The regularisation was tuned at 1 layer (dropout as in R1, weight decay 1e-5) and not re-tuned for the deeper networks, which might prefer other values. Each depth was trained once. The 1-layer rows are the R2 runs, reused.
+- **Conclusion across all depth experiments:** with 500 records depth always hurt; with 10K records it is neutral to slightly harmful on clean text, with a small gain under heavy noise. More data and the right amount of regularisation matter far more than depth for these networks.
+""")
+
+md(r"""
+## 26. Which network next?
+
+**Recommendation: the pretrained BERT encoder itself, frozen. Not a transformer or an RNN trained from scratch.**
+
+- The project brief asks how noise affects *masked-encoder representations*, and Assignment 3 lists contextual transformer experiments as the next step.
+- Any network we train ourselves on 500 records overfits the same way these do (best at epoch 2, section 22). BERT is already trained, so we only run it: no training budget, no new overfitting.
+- It extends both workstreams. Geometry becomes clean/noisy cosine at each of BERT's 12 layers; the static table **E** used here is layer 0, so the curves connect.
+  Prediction becomes masked-token cross-entropy (pseudo-perplexity, which the brief says not to call perplexity).
+- An optional cheap step first: widen the FFNN context from 2 to 4 or 8 tokens. It asks whether more context helps or just gives noise more to break, which is the question BERT's full-sentence context raises.
+  An LSTM is the textbook step in between, but it would face the same 500-record limit and add little to the research question.
+""")
+
 
 nb["cells"] = cells
 nb["metadata"] = {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}}

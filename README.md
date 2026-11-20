@@ -4,6 +4,7 @@
 |---|---|---|---|
 | 1 — Foundations (corpus, character noise, WordPiece) | `phase1.ipynb` | `docs/assignment/Phase-1/PHASE1_PLAN.md` | `docs/phase1_summary.md` |
 | 2 — Baselines (n-gram LMs under noise) | `phase2.ipynb` | `docs/assignment/Phase-2/PHASE2_PLAN.md` | `docs/phase2_summary.md` |
+| 3 — Neural prediction and vector drift (+ team extensions) | `phase3.ipynb` | `docs/assignment/Phase-3/PHASE3_PLAN.md` | `docs/phase3_geometry_summary.md`, `docs/phase3_neural_summary.md`, `docs/phase3_extensions_summary.md` |
 
 ## Phase 1 (Foundations)
 
@@ -93,6 +94,30 @@ over seeds 11, 23, 47), and
 files. The corpus-size comparison is `results/phase2/corpus_size_comparison.csv`.
 
 Phase 2 also needs `matplotlib` (in `requirements.txt`).
+
+## Phase 3 — run order
+
+```
+.venv/bin/python noise_vector_drift.py        # Workstream A, geometry (~3 s)
+.venv/bin/python neural_next_token.py         # Workstream B, neural next-token models (~2-7 min, CPU, 1 thread)
+.venv/bin/python phase3_extensions.py         # team extensions E1-E3 (~15 min; uses the Apple GPU if present)
+.venv/bin/python phase3_extensions.py regularise   # R1: dropout x weight-decay grid (~55 min on the GPU)
+.venv/bin/python phase3_extensions.py scale        # R2: 10K-record training chunk + matched n-gram (~2.5 h on the GPU)
+.venv/bin/python phase3_extensions.py scale --depth-only   # R2b: best 10K settings at 2 and 3 layers (~2 h)
+.venv/bin/python tools/build_phase3_notebook.py && .venv/bin/jupyter nbconvert --to notebook --execute --inplace phase3.ipynb
+```
+
+The extensions (heavier noise up to p = 0.90, the true loss `S / T_clean`, a 1/2/3-hidden-layer x 30-epoch sweep, and a
+sentence tracer) go beyond the Assignment 3 spec. They only read the required results and fail if they cannot reproduce
+them. Trace any sentence from the terminal:
+
+```
+.venv/bin/python phase3_extensions.py trace "A cow jumps over the fence" --word cow --custom "A cwo jumps ovr the fence"
+```
+
+The 36 high-rate noise files (~230 MB) and the sweep checkpoints are not committed. They are deterministic, the first
+command regenerates them, and their SHA-256 hashes are tracked (`derived/phase3/noisy_ext/index.csv`,
+`results/phase3/ext/ext_run_info.json`).
 
 ## Ethics
 

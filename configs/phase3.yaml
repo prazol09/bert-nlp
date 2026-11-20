@@ -49,3 +49,53 @@ neural:
     source: results/phase2/train_a1_slice/scores.csv
     tokenizer: wordpiece
     model: p_mix
+
+# ---- Phase 3 extensions (team decisions, BEYOND the Assignment 3 spec) -----------------------------
+# Nothing above is changed: the 74 required neural rows, the 37-row geometry audit, the two saved
+# checkpoints and the 37 Assignment 2 noise files stay exactly as they are. Everything below writes to
+# derived/phase3/noisy_ext/ and results/phase3/ext/ and is labelled as an extension.
+# Plan: docs/assignment/Phase-3/PHASE3_PLAN.md section 5.
+extensions:
+  label: "extension beyond the Assignment 3 spec; preliminary validation results"
+  noise:
+    rates: [0.01, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90]   # 0.01-0.20 reuse the saved A2 files; the rest are new
+    new_dir: derived/phase3/noisy_ext                           # same a2_default rule, seeds and RNG key as A2
+  true_loss:
+    definition: "S / T_clean: summed loss of a condition divided by the CLEAN target count (35,971), the same denominator for every condition"
+  sweep:
+    n_layers: [1, 2, 3]                    # hidden layers, all of width hidden_size
+    hidden_size: 64                        # never wider than the Assignment 3 width
+    max_epochs: 30                         # long enough to see where training loss levels off
+    device: mps                            # Apple GPU; falls back to cpu if unavailable (recorded in run info)
+    # every other setting (optimizer, lr, batch, seed, selection rule, data) is inherited from `neural:`
+  trace:
+    sentence: "A cow jumps over the fence"
+    rates: [0.10, 0.30, 0.50, 0.90]
+    seed: 11
+  regularisation:                          # step R1: can we stop the overfitting without new data?
+    train_set: train_a1_slice              # same 500 records as Assignment 3
+    dropout: [0.0, 0.2, 0.5]               # after every hidden ReLU, training only
+    weight_decay: [0.0, 1.0e-5, 1.0e-4, 1.0e-3]   # Adam's own (L2) weight decay, so the optimizer is unchanged
+    n_layers: 1                            # the grid runs at 1 layer (depth made no difference in the sweep)
+    depth_check: [2, 3]                    # the winning setting is then re-run at these depths
+    hidden_size: 64
+    max_epochs: 30
+    device: mps
+    selection: "per model, the (dropout, weight_decay) with the lowest clean validation loss; ties keep the simpler setting (listed first)"
+    long_check:                            # winners peaked at the 30-epoch limit: re-train them until they stop improving
+      max_epochs: 100
+      patience: 5                          # stop after 5 epochs without a new lowest clean validation loss
+  data_scale:                              # step R2: more data, without going to the full training split yet
+    source: train_full                     # Phase 2 file: every non-empty, non-heading WikiText-2 train line
+    n_records: 10000                       # first 10,000 records in file order, extended to the end of the article in progress
+    note: "contains all 500 train_a1_slice records (nested); the validation records and noise files are unchanged"
+    settings:                              # per model: none, the R1 winner, and the R1 winner's dropout with weaker weight decay
+      mean:   [{dropout: 0.0, weight_decay: 0.0}, {dropout: 0.2, weight_decay: 1.0e-4}, {dropout: 0.2, weight_decay: 1.0e-5}]
+      concat: [{dropout: 0.0, weight_decay: 0.0}, {dropout: 0.5, weight_decay: 1.0e-4}, {dropout: 0.5, weight_decay: 1.0e-5}]
+    n_layers: 1
+    hidden_size: 64
+    max_epochs: 30
+    patience: 3                            # stop 3 epochs after the last new lowest clean validation loss
+    device: mps
+    ngram: "Assignment 2 WordPiece n-gram rebuilt on the same chunk; interpolation weights re-selected on clean validation with the Assignment 2 procedure (step 0.25)"
+    depth_check: [2, 3]                    # R2b: each model's best 10K setting re-run at these depths (1 layer is the R2 run itself)

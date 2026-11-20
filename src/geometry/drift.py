@@ -42,14 +42,20 @@ def load_validation_records() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------------------------
-def build_pairs(spans, records, p2, tok, E) -> pd.DataFrame:
-    """One row per (condition, span): clean/noisy text, piece counts, cosine, distance, validity."""
+def build_pairs(spans, records, p2, tok, E, conditions: list[str] | None = None, path_for=None) -> pd.DataFrame:
+    """One row per (condition, span): clean/noisy text, piece counts, cosine, distance, validity.
+
+    Defaults are the 37 Assignment 2 conditions in derived/phase2/noisy/. The Phase 3 extensions pass their
+    own condition list and a `path_for(cid) -> Path` resolver; nothing else changes.
+    """
     by_id = {r["record_id"]: r for r in records}
     used = sorted({s.record_id for s in spans})
+    conditions = conditions or condition_ids(p2)
+    path_for = path_for or (lambda c: NOISY_DIR / f"{c}.jsonl")
     rows, mismatches = [], 0
-    for cid in condition_ids(p2):
+    for cid in conditions:
         manifest = {}
-        for line in open(NOISY_DIR / f"{cid}.jsonl", encoding="utf-8"):
+        for line in open(path_for(cid), encoding="utf-8"):
             r = json.loads(line)
             if r["record_id"] in used:
                 manifest[r["record_id"]] = r

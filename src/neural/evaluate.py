@@ -22,11 +22,13 @@ def to_tensors(seq: Sequences) -> tuple[torch.Tensor, torch.Tensor]:
 @torch.no_grad()
 def evaluate(model, ctx: torch.Tensor, tgt: torch.Tensor, chunk: int = 1024) -> dict:
     model.eval()
+    dev = next(model.parameters()).device                 # cpu for Assignment 3; mps/cuda allowed for extensions
     S, correct = 0.0, 0
     for i in range(0, len(tgt), chunk):
-        logits = model(ctx[i:i + chunk])
-        S += float(F.cross_entropy(logits, tgt[i:i + chunk], reduction="none").double().sum())
-        correct += int((logits.argmax(dim=1) == tgt[i:i + chunk]).sum())
+        c, t = ctx[i:i + chunk].to(dev), tgt[i:i + chunk].to(dev)
+        logits = model(c)
+        S += float(F.cross_entropy(logits, t, reduction="none").cpu().double().sum())   # float64 sum on cpu (mps has no float64)
+        correct += int((logits.argmax(dim=1) == t).sum())
     T = len(tgt)
     H = S / T
     return {"T": T, "S": S, "H": H, "PP": math.exp(H), "accuracy": correct / T}

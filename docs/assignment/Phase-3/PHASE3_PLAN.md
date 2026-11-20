@@ -3,7 +3,7 @@
 **Course:** CS620 Research Project, Fall 2026 (instructor: Chhabra)
 **Phase:** 3 — *Neural Prediction and Vector Drift*
 **Team:** Samrat (Student A: geometry) · Prazol (Student B: prediction)
-**Current scope:** Student A geometry workstream is **complete** (G0–G8). Student B neural workstream is **complete** (N0–N7, below). The joint counterexample analysis and paper v0.3 are not started.
+**Current scope:** Student A geometry workstream is **complete** (G0–G8). Student B neural workstream is **complete** (N0–N7, below). Team extensions E1–E4 (section 5) are done. The joint counterexample analysis and paper v0.3 are not started.
 **Status:** all results are **preliminary validation results**. The test split stays sealed.
 
 Source: `docs/assignment/CS620 Research Project - Assignment 3 Revised.pdf`.
@@ -106,3 +106,41 @@ weight decay, CrossEntropyLoss on raw logits, clean training records only, epoch
 
 Still to do under the PDF's "Both: research": interpret counterexamples where vector drift and prediction change disagree, cross-verify each
 other's code, and extend the paper to v0.3.
+
+---
+
+## 5. Extensions (team decisions beyond the Assignment 3 spec)
+
+**Why.** The required runs leave three questions open: does a deeper network or longer training change anything,
+what happens past p = 0.20, and which edit operation really does the most damage once the changing target count
+is accounted for. We also want one hand-sized example that walks a sentence through the whole pipeline.
+
+**Ground rules.** Nothing required is changed or overwritten: the 74 neural rows, the 37-row geometry audit,
+the two checkpoints and the 37 Assignment 2 noise files are only *read*, and the extension run **fails unless it
+reproduces them** (neural H within 1e-4 on the GPU, n-gram H within 1e-9, geometry within 1e-12, and the noise
+generator must regenerate a saved Assignment 2 file exactly). Settings: `extensions:` in `configs/phase3.yaml`.
+Code: `src/ext/`, `phase3_extensions.py`, `tests/test_ext.py`. Outputs: `results/phase3/ext/`,
+`derived/phase3/{noisy_ext,ext}/`. Notebook: `phase3.ipynb` sections 18–26. Every output is labelled as an extension.
+
+| Step | What | Decision | Check |
+|---|---|---|---|
+| **E1** | Heavier noise | rates 0.01, 0.05, 0.10, 0.20 (saved A2 files) + **0.30, 0.50, 0.70, 0.90** (new, same rule / seeds / RNG key) → 73 conditions | generator reproduces `sub-p0.20-s47` exactly; hashes in `derived/phase3/noisy_ext/index.csv` |
+| **E2** | True loss | **`H_true = S / T_clean`**: each condition's summed loss over the *clean* target count (35,971), so every condition has the same denominator. `H = S / T` is kept beside it. | clean: `H_true == H` |
+| **E2** | Which operation hurts most | rank ins / del / sub per model and p on H_true, H, accuracy, cosine, distance; also plot against realized edit distance | 73 conditions for geometry, both required networks and the n-gram control |
+| **E3** | Depth × epochs | **1, 2, 3 hidden layers, width 64 (never wider)**, 30 epochs, mean and concat; everything else as Assignment 3; best epoch by clean validation loss, then scored on all 73 conditions | 1-layer default keeps the Assignment 3 state-dict keys; required run still reproduces byte-identically |
+| **R1** | Regularisation | dropout {0, 0.2, 0.5} × weight decay {0, 1e-5, 1e-4, 1e-3} on the same 500 records, 1 layer, 30 epochs; winners re-run at 2 / 3 layers and to convergence (≤ 100 epochs, patience 5) | dropout 0 draws no random numbers; required run still byte-identical |
+| **R2** | More data | a 10K-record chunk of `train_full` (36.5× the slice, article-complete, contains the slice); per model no regularisation, the R1 winner, and weight decay 1e-5; early stopping; n-gram rebuilt on the same chunk with re-selected weights | done: best networks 6.00 / 6.14, beat the matched n-gram in 22 of 24 noise cells |
+| **R2b** | Depth on the 10K chunk | each model's best 10K setting at 2 and 3 layers (1 layer reused from R2) | done: concatenation 6.00 / 6.15 / 6.26, mean 6.14 / 6.12 / 6.18 for 1 / 2 / 3 layers |
+| **E4** | Trace one sentence | "A cow jumps over the fence" by default; the sentence, focus word, rates, seed and custom typos are all inputs (notebook parameters, an ipywidgets form, or `phase3_extensions.py trace "…"`) | controlled edits hit the same letter; variants are deterministic |
+
+**Device.** The sweep runs on the Apple GPU (`device: mps`, falls back to cpu). Measured on an M4: one training epoch
+3.4 s on cpu (1 thread) vs 1.1 s on mps; a clean-validation pass 1.4 s vs 0.3 s. Scoring on mps matches cpu within
+1e-7 nats. Training on mps repeats exactly run to run on the same machine but takes a slightly different numerical path
+from cpu (validation loss within 0.008 nats over 5 epochs, same best epoch), so the required Assignment 3 results stay on cpu.
+
+**Next architecture (recommendation, not built yet).** Use the pretrained BERT encoder, frozen, rather than training
+a transformer or an RNN from scratch on 500 records (which would overfit the same way the FFNNs do after epoch 2).
+It answers the brief's question about masked-encoder representations and extends both workstreams: layer-wise
+clean/noisy cosine across BERT's 12 layers (the static table **E** is layer 0), and masked-token cross-entropy
+(pseudo-perplexity, never called perplexity). An optional cheap bridge first: widen the FFNN context from 2 to 4 or 8
+tokens to see whether more context helps or just gives noise more to break.

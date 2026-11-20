@@ -1,0 +1,206 @@
+{
+  "label": "extension beyond the Assignment 3 spec; preliminary validation results",
+  "settings": {
+    "source": "train_full",
+    "n_records": 10000,
+    "note": "contains all 500 train_a1_slice records (nested); the validation records and noise files are unchanged",
+    "settings": {
+      "mean": [
+        {
+          "dropout": 0.0,
+          "weight_decay": 0.0
+        },
+        {
+          "dropout": 0.2,
+          "weight_decay": 0.0001
+        },
+        {
+          "dropout": 0.2,
+          "weight_decay": 1e-05
+        }
+      ],
+      "concat": [
+        {
+          "dropout": 0.0,
+          "weight_decay": 0.0
+        },
+        {
+          "dropout": 0.5,
+          "weight_decay": 0.0001
+        },
+        {
+          "dropout": 0.5,
+          "weight_decay": 1e-05
+        }
+      ]
+    },
+    "n_layers": 1,
+    "hidden_size": 64,
+    "max_epochs": 30,
+    "patience": 3,
+    "device": "mps",
+    "ngram": "Assignment 2 WordPiece n-gram rebuilt on the same chunk; interpolation weights re-selected on clean validation with the Assignment 2 procedure (step 0.25)"
+  },
+  "device": "mps",
+  "chunk": {
+    "source": "train_full",
+    "requested": 10000,
+    "records": 10010,
+    "articles": 383,
+    "first": "wt2-train-000003",
+    "last": "wt2-train-021199",
+    "contains_slice_records": 500,
+    "record_ids_sha256": "3a14493c225efd7df875b0fd250a47688ace5260ace89728024637f872866042",
+    "train_targets": 1303238,
+    "distinct_outputs_seen": 25155
+  },
+  "ngram_lambdas": [
+    0.75,
+    0.25,
+    0.0
+  ],
+  "best": [
+    {
+      "run": "mean_L1_do0.2_wd1e-05",
+      "model": "mean",
+      "dropout": 0.2,
+      "weight_decay": 1e-05,
+      "epochs_run": 22,
+      "best_epoch": 19,
+      "best_val_loss": 6.137882776558088,
+      "val_acc_at_best": 0.1645214200328042,
+      "train_loss_at_best": 6.065015278615924,
+      "seconds": 1561.3
+    },
+    {
+      "run": "concat_L1_do0.5_wd1e-05",
+      "model": "concat",
+      "dropout": 0.5,
+      "weight_decay": 1e-05,
+      "epochs_run": 14,
+      "best_epoch": 11,
+      "best_val_loss": 6.003556859405619,
+      "val_acc_at_best": 0.18236913068861027,
+      "train_loss_at_best": 6.110725260974186,
+      "seconds": 16993.9
+    }
+  ],
+  "checkpoints_sha256": {
+    "mean_L1_do0_wd0": "d8d4e87a76c63703c074d4493457d4f225d5655877a617481451c020f077a81d",
+    "mean_L1_do0.2_wd0.0001": "f3690711fd47c2d44af505091abe67848dd921bf187ad67b73860af45ff4cdf2",
+    "mean_L1_do0.2_wd1e-05": "0b43cf44204ed8149624242a47c4068030e08c42ce314c66ec91d45a2b30cae5",
+    "concat_L1_do0_wd0": "d1bd3ea2c2194f73f8bb4e22c44235c21dc715930e499b020d6deb87c5de5add",
+    "concat_L1_do0.5_wd0.0001": "5dc05dc6ef90ef721eb518ece7620f6364236197916973096cb1614d7d522415",
+    "concat_L1_do0.5_wd1e-05": "235a9b7350300604a8a2d1ce15112f161e6b657fce3c5d5f4b82cc8ca20e7079"
+  },
+  "E_sha256": "ca6b51539e1d8c14f11e946a2e6f87a2f547aa0f8d17c15f1c92299d51cd8105",
+  "torch": "2.15.0",
+  "seconds": 22762.5,
+  "note": "settings chosen on clean validation and reported on validation (optimistic); test split sealed",
+  "depth_check": {
+    "depths": [
+      2,
+      3
+    ],
+    "runs": [
+      {
+        "run": "concat_L1_do0.5_wd1e-05",
+        "model": "concat",
+        "dropout": 0.5,
+        "weight_decay": 1e-05,
+        "epochs_run": 14,
+        "best_epoch": 11,
+        "best_val_loss": 6.003556859405619,
+        "val_acc_at_best": 0.1823691306886102,
+        "train_loss_at_best": 6.110725260974186,
+        "seconds": 16993.9,
+        "n_layers": 1,
+        "trainable": NaN,
+        "frozen": NaN
+      },
+      {
+        "run": "concat_L2_do0.5_wd1e-05",
+        "model": "concat",
+        "dropout": 0.5,
+        "weight_decay": 1e-05,
+        "epochs_run": 14,
+        "best_epoch": 11,
+        "best_val_loss": 6.153595653830241,
+        "val_acc_at_best": 0.17180506519140418,
+        "train_loss_at_best": 6.35167993193526,
+        "seconds": 1572.4,
+        "n_layers": 2,
+        "trainable": 2021653.0,
+        "frozen": 23440896.0
+      },
+      {
+        "run": "concat_L3_do0.5_wd1e-05",
+        "model": "concat",
+        "dropout": 0.5,
+        "weight_decay": 1e-05,
+        "epochs_run": 15,
+        "best_epoch": 12,
+        "best_val_loss": 6.258588920665689,
+        "val_acc_at_best": 0.15790497901086986,
+        "train_loss_at_best": 6.440091577836587,
+        "seconds": 1364.7,
+        "n_layers": 3,
+        "trainable": 2025813.0,
+        "frozen": 23440896.0
+      },
+      {
+        "run": "mean_L1_do0.2_wd1e-05",
+        "model": "mean",
+        "dropout": 0.2,
+        "weight_decay": 1e-05,
+        "epochs_run": 22,
+        "best_epoch": 19,
+        "best_val_loss": 6.137882776558088,
+        "val_acc_at_best": 0.1645214200328042,
+        "train_loss_at_best": 6.065015278615924,
+        "seconds": 1561.3,
+        "n_layers": 1,
+        "trainable": NaN,
+        "frozen": NaN
+      },
+      {
+        "run": "mean_L2_do0.2_wd1e-05",
+        "model": "mean",
+        "dropout": 0.2,
+        "weight_decay": 1e-05,
+        "epochs_run": 22,
+        "best_epoch": 19,
+        "best_val_loss": 6.118700512452329,
+        "val_acc_at_best": 0.16574462761669123,
+        "train_loss_at_best": 6.127540035960579,
+        "seconds": 1963.8,
+        "n_layers": 2,
+        "trainable": 1972501.0,
+        "frozen": 23440896.0
+      },
+      {
+        "run": "mean_L3_do0.2_wd1e-05",
+        "model": "mean",
+        "dropout": 0.2,
+        "weight_decay": 1e-05,
+        "epochs_run": 22,
+        "best_epoch": 19,
+        "best_val_loss": 6.1755264287750435,
+        "val_acc_at_best": 0.16357621417252788,
+        "train_loss_at_best": 6.23321402125027,
+        "seconds": 2026.0,
+        "n_layers": 3,
+        "trainable": 1976661.0,
+        "frozen": 23440896.0
+      }
+    ],
+    "checkpoints_sha256": {
+      "mean_L2_do0.2_wd1e-05": "eeca909a17e701488c6b1075e37312bf3a6feb8a68b9b63ace3e4e9eba1be121",
+      "mean_L3_do0.2_wd1e-05": "25c8d6e7056759250125c2292a19702b251f8ead22fd28d6ed169478cb2b99ea",
+      "concat_L2_do0.5_wd1e-05": "7bd8eee692a49433388d814c248a1b2500d432dd435e84b552a307bf2e4716c4",
+      "concat_L3_do0.5_wd1e-05": "06af7359a465169183aecd98eab6ed0c4236a1ffb661a2b104a27ce906e3a4bd"
+    },
+    "seconds": 7253.7,
+    "note": "1-layer rows are the R2 runs with the same settings (reused, not re-trained)"
+  }
+}
